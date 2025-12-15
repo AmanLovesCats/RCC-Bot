@@ -7,6 +7,7 @@ const GAME_MODES = ["CTF", "TDM", "KOTH", "TKOTH", "FFA", "GunGame"];
 const TIMEFRAMES = ["daily"];
 const lastTopPlayers = {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const CHANNEL = "1126500874471079966";
 
 function cleanPlayerName(name) {
   return name.replace(/<color=.*?>(.*?)<\/color>/g, "[$1]");
@@ -24,7 +25,9 @@ async function checkLeaderboard(gameMode, timeframe) {
 
   try {
     const { data } = await axios.get(API_URL);
-    const top = data?.data?.[0]?.key ? cleanPlayerName(data.data[0].key) : "No Data";
+    const top = data?.data?.[0]?.key
+      ? cleanPlayerName(data.data[0].key)
+      : "No Data";
     return { gameMode, timeframe, topPlayer: top };
   } catch {
     return { gameMode, timeframe, topPlayer: "Unknown" };
@@ -44,10 +47,10 @@ async function fetchAllLeaderboards() {
 }
 
 function buildTopEmbed(results) {
-  const now = new Date().toLocaleString("en-GB", { hour12: false });
-
   const embed = new EmbedBuilder()
-    .setThumbnail("https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true")
+    .setThumbnail(
+      "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true"
+    )
     .setTitle("🏆 Today's Top Daily Leaderboard Players!")
     .setColor(0x2ecc71)
     .setTimestamp();
@@ -63,13 +66,13 @@ function buildTopEmbed(results) {
   return embed;
 }
 
-export function initDailyTopPlayers(client, CHANNEL_ID) {
+export function initDailyTopPlayers(client) {
   console.log("[DailyTopPlayers] Event initialized.");
 
   async function performDailyPost() {
     try {
       console.log("[DailyTopPlayers] Starting warm-up fetch");
-      const warmupResults = await fetchAllLeaderboards();
+      await fetchAllLeaderboards();
       console.log("[DailyTopPlayers] Warm-up fetch complete");
 
       await sleep(15 * 60 * 1000);
@@ -78,7 +81,7 @@ export function initDailyTopPlayers(client, CHANNEL_ID) {
       const finalResults = await fetchAllLeaderboards();
       const embed = buildTopEmbed(finalResults);
 
-      const channel = client.channels.cache.get(CHANNEL_ID);
+      const channel = client.channels.cache.get(CHANNEL);
       if (!channel) return console.error("Invalid DAILY TOP channel ID");
 
       await channel.send({ embeds: [embed] });
@@ -98,7 +101,11 @@ export function initDailyTopPlayers(client, CHANNEL_ID) {
   }
 
   const delay = nextPost.getTime() - now.getTime();
-  console.log(`[DailyTopPlayers] First daily post scheduled in ${Math.round(delay / 60000)} minutes.`);
+  console.log(
+    `[DailyTopPlayers] First daily post scheduled in ${Math.round(
+      delay / 60000
+    )} minutes.`
+  );
 
   setTimeout(() => {
     performDailyPost();
