@@ -208,6 +208,12 @@ async function sendDailyClanReport(client) {
         if (!sorted.length) return;
 
         const embed = new EmbedBuilder()
+             .setAuthor({
+          name: "REPULS.IO By Docski",
+          iconURL: guild.iconURL({ dynamic: true, size: 128 }),
+          url: "https://repuls.io"
+        })
+            .setThumbnail("https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true")
             .setTitle("Today's Top Clans!")
             .setColor(sorted[0].color)
             .setDescription(
@@ -215,12 +221,11 @@ async function sendDailyClanReport(client) {
                     .map(
                         (c, i) =>
                             `**${i + 1}. ${c.clan}** — ${c.totalValue.toLocaleString()} Points` +
-                            `Members on leaderboard: **${c.playerCount}**`
+                            `\nMembers on leaderboard: **${c.playerCount}**`
                     )
                     .join("\n")
             )
             .setFooter({ text: "View all the leaderboards: https://repuls.io/leaderboard/" })
-            .setTimestamp();
 
         await channel.send({ embeds: [embed] });
     } catch (err) {
@@ -230,17 +235,17 @@ async function sendDailyClanReport(client) {
 
 export function startDailyClanReport(client) {
     function msUntil525AM() {
-        const now = new Date();
-        const target = new Date();
-
-        target.setHours(5, 25, 0, 0);
-
-        if (now > target) {
-            target.setDate(target.getDate() + 1);
-        }
-
-        return target - now;
+    const now = new Date();
+    const nowUTC = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+    const targetIST = new Date(nowUTC);
+    targetIST.setUTCHours(5 - 5, 25 - 30, 0, 0);
+    
+    if (targetIST.getTime() <= nowUTC) {
+        targetIST.setUTCDate(targetIST.getUTCDate() + 1);
     }
+
+    return targetIST.getTime() - nowUTC;
+}
 
     setTimeout(() => {
         sendDailyClanReport(client);

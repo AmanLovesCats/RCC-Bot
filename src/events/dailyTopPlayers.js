@@ -69,46 +69,61 @@ function buildTopEmbed(results) {
 export function initDailyTopPlayers(client) {
   console.log("[DailyTopPlayers] Event initialized.");
 
-  async function performDailyPost() {
+  let preparedResults = null;
+
+  async function prepareData() {
+    console.log("[DailyTopPlayers] Pre-fetching leaderboard data (15 min before post)");
+    preparedResults = await fetchAllLeaderboards();
+    console.log("[DailyTopPlayers] Data prepared successfully");
+  }
+
+  async function sendPost() {
     try {
-      console.log("[DailyTopPlayers] Starting warm-up fetch");
-      await fetchAllLeaderboards();
-      console.log("[DailyTopPlayers] Warm-up fetch complete");
+      if (!preparedResults) {
+        console.warn("[DailyTopPlayers] No prepared data, fetching now");
+        preparedResults = await fetchAllLeaderboards();
+      }
 
-      await sleep(15 * 60 * 1000);
-
-      console.log("[DailyTopPlayers] Fetching again for final post...");
-      const finalResults = await fetchAllLeaderboards();
-      const embed = buildTopEmbed(finalResults);
+      const embed = buildTopEmbed(preparedResults);
+      preparedResults = null;
 
       const channel = client.channels.cache.get(CHANNEL);
       if (!channel) return console.error("Invalid DAILY TOP channel ID");
 
       await channel.send({ embeds: [embed] });
-      console.log("[DailyTopPlayers] Posted daily winners.");
+      console.log("[DailyTopPlayers] Posted daily winners at 5:25 AM IST");
     } catch (err) {
       console.error("[DailyTopPlayers] Error:", err.message);
     }
   }
 
-  const now = new Date();
-  const nextPost = new Date();
+  function msUntil525IST() {
+    const now = new Date();
+    const target = new Date();
 
-  nextPost.setUTCHours(23, 55, 0, 0);
+    target.setUTCHours(23, 55, 0, 0);
 
-  if (nextPost < now) {
-    nextPost.setUTCDate(nextPost.getUTCDate() + 1);
+    if (now > target) {
+      target.setUTCDate(target.getUTCDate() + 1);
+    }
+
+    return target - now;
   }
 
-  const delay = nextPost.getTime() - now.getTime();
+  const initialDelay = msUntil525IST();
+  const prefetchDelay = initialDelay - 15 * 60 * 1000;
+
   console.log(
-    `[DailyTopPlayers] First daily post scheduled in ${Math.round(
-      delay / 60000
-    )} minutes.`
+    `[DailyTopPlayers] First post in ${Math.round(initialDelay / 60000)} minutes`
   );
 
   setTimeout(() => {
-    performDailyPost();
-    setInterval(performDailyPost, 24 * 60 * 60 * 1000);
-  }, delay);
+    prepareData();
+    setInterval(prepareData, 24 * 60 * 60 * 1000);
+  }, prefetchDelay);
+
+  setTimeout(() => {
+    sendPost();
+    setInterval(sendPost, 24 * 60 * 60 * 1000);
+  }, initialDelay);
 }

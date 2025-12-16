@@ -61,16 +61,20 @@ function saveRecords() {
   }
 }
 
-function resetDailyData() {
+function resetAfterDailySend() {
   dailyData = [];
   dailyHigh = 0;
   dailyLow = Infinity;
   lastRecordedDay = new Date().getUTCDate();
+
+  ccuHistory = [];
+  records = { highest: 0, lowest: Infinity, dailyData: [] };
+
   saveRecords();
+  saveHistory();
 
-  console.log("[Daily CCU] Reset for new day");
+  console.log("[Daily CCU] Data reset after daily summary");
 }
-
 function checkDailyReset() {
   const today = new Date().getUTCDate();
   if (today !== lastRecordedDay) {
@@ -124,7 +128,7 @@ async function sendDailySummary(client) {
         legend: { labels: { color: "white" } },
       },
       scales: {
-        x: { ticks: { color: "white" } },
+        x: { display: false },
         y: { ticks: { color: "white" }, beginAtZero: true },
       },
     },
@@ -149,14 +153,17 @@ async function sendDailySummary(client) {
       `• 💀 Hardcore: ${modePeaks.hc}\n` +
       `• 🌐 Warfare: ${modePeaks.wf}\n` +
       `• 🛠 Custom: ${modePeaks.cm}\n\n` +
-      `🕒 **Summary Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
+      `**Summary Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
     )
     .setImage("attachment://daily_ccu.png");
 
   const channel = await client.channels.fetch(DAILY_STATS_CHANNEL);
-  if (channel) await channel.send({ embeds: [embed], files: [attachment] });
+  if (channel) {
+  await channel.send({ embeds: [embed], files: [attachment] });
+  resetAfterDailySend();
+}
 
-  console.log("Daily summary sent!");
+console.log("Daily summary sent and data reset!");
 }
 
 const API_URL = process.env.CCU;

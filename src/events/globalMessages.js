@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import OpenAI from "openai";
 dotenv.config();
 
 const DATA_FILE = path.join(process.cwd(), "src/data/messageCounts.json");
@@ -10,10 +11,14 @@ if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, JSON.stringify({}));
 }
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 export function initGlobalMessages(client, channelId, sessionTicket) {
   const ws = new WebSocket(process.env.chat, {
     headers: {
-      "Origin": "https://repuls.io",
+      Origin: "https://repuls.io",
       "User-Agent": "Mozilla/5.0",
     },
   });
@@ -21,69 +26,89 @@ export function initGlobalMessages(client, channelId, sessionTicket) {
   let lastReplyTime = 0;
 
   const REPLY_COOLDOWN = 120 * 1000;
+  const REPLY_DELAY = 4000;
+  const BOT_NAME = "repulsclanclash";
+
+  async function generateAIReply(sender, message) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a friendly, concise AI chatting casually in a multiplayer game global chat. Keep replies short, natural, and non-spammy. Be aware that you are talking with children, nothing innapropriate should be said, no swears, no references. Anything out of context should be ignored and chat should be focused on gaming.",
+          },
+          {
+            role: "user",
+            content: `${sender}: ${message}`,
+          },
+        ],
+        max_tokens: 40,
+        temperature: 0.7,
+      });
+
+      return completion.choices[0]?.message?.content?.trim();
+    } catch (err) {
+      console.error("OpenAI error:", err.message);
+      return null;
+    }
+  }
 
   ws.on("open", () => {
     console.log("Connected to Repuls chat WebSocket!");
 
-    const authPacket = {
-      ev: "authenticate",
-      data: JSON.stringify({ sessionTicket, friendList: [] }),
-    };
-    ws.send(JSON.stringify(authPacket));
-    console.log("Authentication packet sent.");
+    ws.send(
+      JSON.stringify({
+        ev: "authenticate",
+        data: JSON.stringify({ sessionTicket, friendList: [] }),
+      })
+    );
 
     setTimeout(() => {
-      const subscribePacket = {
-        ev: "subscribeChannel",
-        data: JSON.stringify({ channelName: "Global" }),
-      };
-      ws.send(JSON.stringify(subscribePacket));
+      ws.send(
+        JSON.stringify({
+          ev: "subscribeChannel",
+          data: JSON.stringify({ channelName: "Global" }),
+        })
+      );
       console.log("Subscribed to Global chat.");
-
-
     }, 500);
   });
 
   ws.on("message", async (msg) => {
     try {
       const packet = JSON.parse(msg.toString());
-      if (packet.ev === "channelMessage") {
-        const chat = JSON.parse(packet.data);
-        const { sender, message } = chat;
+      if (packet.ev !== "channelMessage") return;
 
-        const BOT_NAME = "repulsclanclash";
-        if (sender === BOT_NAME) {
-          return;
-        }
+      const chat = JSON.parse(packet.data);
+      const { sender, message } = chat;
 
+      if (!sender || sender === BOT_NAME) return;
 
-        const channel = client.channels.cache.get(channelId);
-        if (channel) {
-          channel.send(`**${sender}**: ${message}`);
-        }
+      const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+      data[sender] = (data[sender] || 0) + 1;
+      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
+      const now = Date.now();
+      if (now - lastReplyTime < REPLY_COOLDOWN) return;
 
-        const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-        if (!data[sender]) data[sender] = 0;
-        data[sender]++;
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+      const reply = await generateAIReply(sender, message);
+      if (!reply) return;
 
+      lastReplyTime = now;
 
-        const now = Date.now();
-        const lower = message.toLowerCase();
-
-
-        if ((lower.includes("hello") || lower.includes("hi") || lower.includes("hey")) && now - lastReplyTime > REPLY_COOLDOWN) {
-          const reply = `Hello ${sender}!`;
-          ws.send(JSON.stringify({
+      setTimeout(() => {
+        ws.send(
+          JSON.stringify({
             ev: "publishMessage",
-            data: JSON.stringify({ channel: "Global", message: reply }),
-          }));
-          console.log(`Replied to ${sender}: ${reply}`);
-          lastReplyTime = now;
-        }
-
-      }
+            data: JSON.stringify({
+              channel: "Global",
+              message: reply,
+            }),
+          })
+        );
+      }, REPLY_DELAY);
     } catch (e) {
       console.log("Error parsing WebSocket message:", e);
     }
