@@ -78,7 +78,7 @@ function resetAfterDailySend() {
 function checkDailyReset() {
   const today = new Date().getUTCDate();
   if (today !== lastRecordedDay) {
-    resetDailyData();
+    resetAfterDailySend();
   }
 }
 

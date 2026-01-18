@@ -33,7 +33,7 @@ export async function execute(interaction) {
       `• ${userCmd} — View a specific user's ranking on the leaderboards.`,
       `• ${sierraCmd} or !sierra <question> — Ask the remade Sierra AI about REPULS lore.`,
       `• ${findServersCmd} — Find available or empty servers with a simple query.`,
-      `• ${leaderboardinfoCmd} — Find available or empty servers with a simple query.`,
+      `• ${leaderboardinfoCmd} — Get detailed info on how the leaderboards work.`,
       "",
       "**Useful Links Below:**"
     ].join("\n")

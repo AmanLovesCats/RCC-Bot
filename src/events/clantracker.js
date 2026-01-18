@@ -181,12 +181,12 @@ export async function getClanLeaderboardEmbed(client) {
                 .slice(0, 10)
                 .map(
                     (c, i) =>
-                        `**${i + 1}. ${c.clan}**Points: ***${c.totalValue.toLocaleString()}*** ·           Members on the leaderboard: **${c.playerCount}\n**`
+                        `**${i + 1}. ${c.clan}**Points: ***${c.totalValue.toLocaleString()}*** · Members on the leaderboard: **${c.playerCount}\n**`
                 )
                 .join("\n")
         )
         .setFooter({
-            text: "View all the leaderboards: https://repuls.io/leaderboard/"
+            text: "Admin View Enabled"
         });
 }
 
@@ -207,25 +207,41 @@ async function sendDailyClanReport(client) {
 
         if (!sorted.length) return;
 
-        const embed = new EmbedBuilder()
-             .setAuthor({
-          name: "REPULS.IO By Docski",
-          iconURL: guild.iconURL({ dynamic: true, size: 128 }),
-          url: "https://repuls.io"
-        })
-            .setThumbnail("https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true")
-            .setTitle("Today's Top Clans!")
-            .setColor(sorted[0].color)
-            .setDescription(
-                sorted
-                    .map(
-                        (c, i) =>
-                            `**${i + 1}. ${c.clan}** — ${c.totalValue.toLocaleString()} Points` +
-                            `\nMembers on leaderboard: **${c.playerCount}**`
-                    )
-                    .join("\n")
-            )
-            .setFooter({ text: "View all the leaderboards: https://repuls.io/leaderboard/" })
+        const rankEmojis = ["🥇", "🥈", "🥉"];
+
+        const leader = sorted[0];
+        const runnerUp = sorted[1];
+
+        const dominanceNote =
+          runnerUp && leader.totalValue >= runnerUp.totalValue * 1.25
+            ? `\n\n🔥 **${leader.clan} is dominating today!**`
+               : "";
+
+const embed = new EmbedBuilder()
+    .setAuthor({
+        name: "REPULS.IO By Docski",
+        iconURL: guild.iconURL({ dynamic: true, size: 128 }),
+        url: "https://repuls.io"
+    })
+    .setThumbnail(
+        "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true"
+    )
+    .setTitle("🏆 Top Clans — Daily Rankings")
+    .setColor(sorted[0].color)
+    .setDescription(
+        sorted
+            .map((c, i) => {
+                const medal = rankEmojis[i] ?? "🏅";
+                return (
+                    `**${medal} ${i + 1}. ${c.clan}** — **${c.totalValue.toLocaleString()} Points**\n` +
+                    `👥 Members on leaderboard: **${c.playerCount}**`
+                );
+            })
+            .join("\n\n") + dominanceNote
+    )
+    .setFooter({
+        text: "Daily leaderboard • https://repuls.io/leaderboard/"
+    });
 
         await channel.send({ embeds: [embed] });
     } catch (err) {

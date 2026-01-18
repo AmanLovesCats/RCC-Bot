@@ -47,24 +47,35 @@ async function fetchAllLeaderboards() {
 }
 
 function buildTopEmbed(results) {
+  const modeEmojis = {
+    CTF: "🚩",
+    TDM: "⚔️",
+    KOTH: "👑",
+    TKOTH: "🔥",
+    FFA: "💥",
+    GunGame: "🔫",
+  };
+
   const embed = new EmbedBuilder()
     .setThumbnail(
       "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true"
     )
-    .setTitle("🏆 Today's Top Daily Leaderboard Players!")
-    .setColor(0x2ecc71)
+    .setTitle("🏆 Top Daily Leaderboard Winners")
+    .setDescription(
+      results
+        .map((r, i) => {
+          const emoji = modeEmojis[r.gameMode] ?? "🎮";
+          return `**${emoji} ${r.gameMode}** — ${r.topPlayer}`;
+        })
+        .join("\n")
+    )
+    .setColor(0xf1c40f)
+    .setFooter({ text: "Daily reset • Repuls.io Leaderboards" })
     .setTimestamp();
-
-  for (const r of results) {
-    embed.addFields({
-      name: `${r.gameMode} (${r.timeframe})`,
-      value: r.topPlayer,
-      inline: true,
-    });
-  }
 
   return embed;
 }
+
 
 export function initDailyTopPlayers(client) {
   console.log("[DailyTopPlayers] Event initialized.");

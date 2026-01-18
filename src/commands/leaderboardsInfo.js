@@ -10,6 +10,20 @@ const {
   SectionBuilder,
 } = pkg;
 
+function getNextIST530Timestamp() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const day = now.getUTCDate();
+
+  let next = new Date(Date.UTC(year, month, day, 0, 0, 0));
+
+  if (now >= next) {
+    next = new Date(Date.UTC(year, month, day + 1, 0, 0, 0));
+  }
+
+  return Math.floor(next.getTime() / 1000);
+}
 export const data = new SlashCommandBuilder()
   .setName("leaderboard-info")
   .setDescription("Shows information about the Repuls.io Leaderboards.");
@@ -19,6 +33,8 @@ export async function execute(interaction) {
 
   const leaderboardCmd = `</leaderboard:${commands.find(c => c.name === "leaderboard")?.id}>`;
   const userCmd = `</user:${commands.find(c => c.name === "user")?.id}>`;
+
+  const dailyResetTs = getNextIST530Timestamp();
 
   const title = new TextDisplayBuilder().setContent(
     "### 📊 Repuls.io Leaderboard Information",
@@ -40,7 +56,7 @@ export async function execute(interaction) {
       "Total combinations: **36 Leaderboards**",
       "",
       "### 🔄 Update Frequency",
-      "• Daily resets at **<t:1765324800:t>**",
+      `• Daily resets at **<t:${dailyResetTs}:t>** (**<t:${dailyResetTs}:R>**)`,
       "• Weekly resets every **168 hours (7 days)** after last refresh.",
       "",
       "### 🎮 Esports",
