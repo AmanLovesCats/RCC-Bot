@@ -1,9 +1,10 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, PermissionFlagsBits  } from "discord.js";
 import { GAME_MODES, TIMEFRAMES, fetchLeaderboard, extractClanData, saveClanData } from "../events/clantracker.js";
 
 export const data = new SlashCommandBuilder()
   .setName("updateclans")
-  .setDescription("Manually refresh the clan leaderboard data");
+  .setDescription("Manually refresh the clan leaderboard data")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 export async function execute(interaction) {
   await interaction.deferReply({ ephemeral: true });

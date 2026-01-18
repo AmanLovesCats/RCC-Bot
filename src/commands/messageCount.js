@@ -8,6 +8,7 @@ export default {
   data: new SlashCommandBuilder()
     .setName("messagecount")
     .setDescription("Shows message statistics from Repuls global chat")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((option) =>
       option
         .setName("type")

@@ -1,9 +1,10 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, PermissionFlagsBits  } from "discord.js";
 import { getClanLeaderboardEmbed } from "../events/clantracker.js";
 
 export const data = new SlashCommandBuilder()
   .setName("clans")
-  .setDescription("View the current clan leaderboard");
+  .setDescription("View the current clan leaderboard")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 function stripColorTags(text) {
   if (!text) return text;
