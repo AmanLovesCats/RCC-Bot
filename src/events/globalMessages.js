@@ -19,7 +19,6 @@ export function initGlobalMessages(client, channelId, sessionTicket) {
   });
 
   let lastReplyTime = 0;
-
   const REPLY_COOLDOWN = 120 * 1000;
 
   ws.on("open", () => {
@@ -39,8 +38,6 @@ export function initGlobalMessages(client, channelId, sessionTicket) {
       };
       ws.send(JSON.stringify(subscribePacket));
       console.log("Subscribed to Global chat.");
-
-
     }, 500);
   });
 
@@ -56,22 +53,13 @@ export function initGlobalMessages(client, channelId, sessionTicket) {
           return;
         }
 
-
-        const channel = client.channels.cache.get(channelId);
-        if (channel) {
-          channel.send(`**${sender}**: ${message}`);
-        }
-
-
         const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
         if (!data[sender]) data[sender] = 0;
         data[sender]++;
         fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
-
         const now = Date.now();
         const lower = message.toLowerCase();
-
       }
     } catch (e) {
       console.log("Error parsing WebSocket message:", e);

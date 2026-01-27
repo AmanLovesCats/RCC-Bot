@@ -7,7 +7,7 @@ const GAME_MODES = ["CTF", "TDM", "KOTH", "TKOTH", "FFA", "GunGame"];
 const TIMEFRAMES = ["daily"];
 const lastTopPlayers = {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const CHANNEL = "1126500874471079966";
+const CHANNEL = "1126164735948230709";
 
 function cleanPlayerName(name) {
   return name.replace(/<color=.*?>(.*?)<\/color>/g, "[$1]");
@@ -18,7 +18,7 @@ async function checkLeaderboard(gameMode, timeframe) {
   const API_BASE = process.env.topplayers;
 
   if (!API_BASE) {
-    throw new Error("LEADERBOARD_API environment variable is not set");
+    throw new Error("LEADERBOARD_API environment variable is not set dude");
   }
 
   const API_URL = `${API_BASE}/api/getScore?boardName=${boardName}&page=1`;
@@ -57,6 +57,11 @@ function buildTopEmbed(results) {
   };
 
   const embed = new EmbedBuilder()
+     .setAuthor({
+      name: "REPULS.IO by DOCSKI",
+      icon_url: "https://cdn.discordapp.com/avatars/213028561584521216/a6962bf317cf74819879890cc706cdc3.png?size=1024",
+      url: "https://repuls.io",
+})
     .setThumbnail(
       "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true"
     )
@@ -65,7 +70,7 @@ function buildTopEmbed(results) {
       results
         .map((r, i) => {
           const emoji = modeEmojis[r.gameMode] ?? "🎮";
-          return `**${emoji} ${r.gameMode}** — ${r.topPlayer}`;
+          return `### **${emoji} ${r.gameMode}** — ${r.topPlayer}\n`;
         })
         .join("\n")
     )
@@ -102,7 +107,7 @@ export function initDailyTopPlayers(client) {
       if (!channel) return console.error("Invalid DAILY TOP channel ID");
 
       await channel.send({ embeds: [embed] });
-      console.log("[DailyTopPlayers] Posted daily winners at 5:25 AM IST");
+      console.log("[DailyTopPlayers] Posted daily winners");
     } catch (err) {
       console.error("[DailyTopPlayers] Error:", err.message);
     }

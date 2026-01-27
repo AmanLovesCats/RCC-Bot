@@ -1,319 +1,283 @@
-import axios from "axios";
-import { EmbedBuilder, AttachmentBuilder } from "discord.js";
-import ChartJS from "chart.js/auto";
-import { createCanvas } from "canvas";
-import fs from "fs";
+import fetch from "node-fetch";
+import { AttachmentBuilder } from "discord.js";
+import { ChartJSNodeCanvas } from "chartjs-node-canvas";
 import path from "path";
-import dotenv from "dotenv";
-dotenv.config();
+import fs from "fs";
 
-const DAILY_STATS_CHANNEL = "1126500874471079966";
+const DATA_DIR = path.join(process.cwd(), "src/data");
+const CCU_FILE = path.join(DATA_DIR, "ccuHistory.json");
 
-let dailyData = [];
-let dailyHigh = 0;
-let dailyLow = Infinity;
-let lastRecordedDay = new Date().getUTCDate();
+let lastReportDate = null;
 
-const DATA_DIR = path.resolve("src/data");
-const RECORD_FILE = path.join(DATA_DIR, "ccu_records.json");
-
-let records = { highest: 0, lowest: Infinity, dailyData: [] };
-
-if (fs.existsSync(RECORD_FILE)) {
+function loadPersistentData() {
   try {
-    const saved = JSON.parse(fs.readFileSync(RECORD_FILE, "utf8"));
-    records = { ...records, ...saved };
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(CCU_FILE)) return;
 
-    if (Array.isArray(saved.dailyData)) {
-      dailyData = saved.dailyData.map(e => ({
-        ...e,
-        time: new Date(e.time)
-      }));
-    }
+    const raw = JSON.parse(fs.readFileSync(CCU_FILE, "utf8"));
 
-    dailyHigh = saved.dailyHigh ?? 0;
-    dailyLow = saved.dailyLow ?? Infinity;
-    lastRecordedDay = saved.lastRecordedDay ?? new Date().getUTCDate();
+    ccuHistory = (raw.ccuHistory || []).map(e => ({
+      ...e,
+      time: new Date(e.time),
+    }));
 
-    console.log("Loaded daily CCU from file.");
-  } catch (err) {
-    console.error("Failed to read record file:", err.message);
+    peakGlobal = raw.peakGlobal || 0;
+    peakRegion = raw.peakRegion || peakRegion;
+    peakGamemode = raw.peakGamemode || peakGamemode;
+  } catch (e) {
+    console.error("Failed to load CCU persistence:", e.message);
   }
 }
-function saveRecords() {
+
+
+function savePersistentData() {
   try {
     fs.writeFileSync(
-      RECORD_FILE,
+      CCU_FILE,
       JSON.stringify(
         {
-          ...records,
-          dailyData,
-          dailyHigh,
-          dailyLow,
-          lastRecordedDay
+          ccuHistory,
+          peakGlobal,
+          peakRegion,
+          peakGamemode,
         },
         null,
         2
       )
     );
+  } catch (e) {
+    console.error("Failed to save CCU persistence:", e.message);
+  }
+}
+
+
+const CCU_API = "https://stats.docskigames.com/api/ccu-current";
+const POLL_INTERVAL = 60 * 1000;
+const REPORT_CHANNEL_ID = "1126164735948230709";
+
+const TEST_MODE = false;
+
+export let latestGlobalCCU = 0;
+
+let ccuHistory = [];
+let peakGlobal = 0;
+
+let peakRegion = {
+  as01: 0,
+  eu01: 0,
+  na01: 0,
+  na02: 0,
+};
+
+let peakGamemode = {
+  cm: 0,
+  cs: 0,
+  hc: 0,
+  wf: 0,
+};
+
+async function fetchCCU() {
+  try {
+    const res = await fetch(CCU_API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+
+    const globalTotal = 
+      (data.global?.cm || 0) +
+      (data.global?.cs || 0) +
+      (data.global?.hc || 0) +
+      (data.global?.wf || 0);
+
+    latestGlobalCCU = globalTotal;
+
+    ccuHistory.push({
+      time: new Date(),
+      global: globalTotal,
+      cs: data.global?.cs || 0,
+      hc: data.global?.hc || 0,
+      wf: data.global?.wf || 0,
+      cm: data.global?.cm || 0,
+    });
+
+    peakGlobal = Math.max(peakGlobal, globalTotal);
+
+    for (const region in (data.perRegion || {})) {
+      const total =
+        (data.perRegion[region]?.cm || 0) +
+        (data.perRegion[region]?.cs || 0) +
+        (data.perRegion[region]?.hc || 0) +
+        (data.perRegion[region]?.wf || 0);
+
+      if (peakRegion[region] !== undefined) {
+        peakRegion[region] = Math.max(peakRegion[region], total);
+      }
+    }
+
+    for (const mode of ["cm", "cs", "hc", "wf"]) {
+      peakGamemode[mode] = Math.max(
+        peakGamemode[mode],
+        data.global?.[mode] || 0
+      );
+    }
   } catch (err) {
-    console.error("Failed to save record file:", err.message);
+    console.error("CCU fetch failed:", err.message);
   }
+  savePersistentData();
 }
 
-function resetAfterDailySend() {
-  dailyData = [];
-  dailyHigh = 0;
-  dailyLow = Infinity;
-  lastRecordedDay = new Date().getUTCDate();
 
-  ccuHistory = [];
-  records = { highest: 0, lowest: Infinity, dailyData: [] };
+async function generateChart() {
+  const width = 900;
+  const height = 400;
+  const canvas = new ChartJSNodeCanvas({ width, height });
 
-  saveRecords();
-  saveHistory();
+  const labels = ccuHistory.map(e =>
+    e.time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+  );
 
-  console.log("[Daily CCU] Data reset after daily summary");
-}
-function checkDailyReset() {
-  const today = new Date().getUTCDate();
-  if (today !== lastRecordedDay) {
-    resetAfterDailySend();
-  }
-}
-
-function updateDailyStats(entry) {
-  dailyData.push(entry);
-
-  if (entry.global > dailyHigh) dailyHigh = entry.global;
-  if (entry.global < dailyLow) dailyLow = entry.global;
-
-  saveRecords();
-}
-async function sendDailySummary(client) {
-  if (dailyData.length === 0) return;
-
-  const asPeak = Math.max(...dailyData.map(d => d.asTotal));
-  const euPeak = Math.max(...dailyData.map(d => d.euTotal));
-  const naPeak = Math.max(...dailyData.map(d => d.naTotal));
-
-  const modePeaks = {
-    cs: Math.max(...dailyData.map(d => d.cs)),
-    hc: Math.max(...dailyData.map(d => d.hc)),
-    wf: Math.max(...dailyData.map(d => d.wf)),
-    cm: Math.max(...dailyData.map(d => d.cm)),
-  };
-
-  const canvas = createCanvas(800, 400);
-  const ctx = canvas.getContext("2d");
-
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, 800, 400);
-
-  new ChartJS(ctx, {
+  const config = {
     type: "line",
     data: {
-      labels: dailyData.map(e => e.time.toLocaleTimeString()),
+      labels,
       datasets: [
-        { label: "Asia", data: dailyData.map(e => e.asTotal), borderColor: "#FF5555" },
-        { label: "Europe", data: dailyData.map(e => e.euTotal), borderColor: "#5555FF" },
-        { label: "North America", data: dailyData.map(e => e.naTotal), borderColor: "#55FF55" },
-        { label: "Global", data: dailyData.map(e => e.global), borderColor: "#FFA500" },
+        {
+          label: "Global",
+          data: ccuHistory.map(e => e.global),
+          borderWidth: 2,
+          tension: 0.3,
+        },
+        {
+          label: "Casual",
+          data: ccuHistory.map(e => e.cs),
+          borderWidth: 1,
+          tension: 0.3,
+        },
+        {
+          label: "Hardcore",
+          data: ccuHistory.map(e => e.hc),
+          borderWidth: 1,
+          tension: 0.3,
+        },
+        {
+          label: "Warfare",
+          data: ccuHistory.map(e => e.wf),
+          borderWidth: 1,
+          tension: 0.3,
+        },
+        {
+          label: "Custom",
+          data: ccuHistory.map(e => e.cm),
+          borderWidth: 1,
+          tension: 0.3,
+        },
       ],
     },
     options: {
-      responsive: false,
-      plugins: {
-        title: { display: true, text: "Last 24 hours", color: "white" },
-        legend: { labels: { color: "white" } },
-      },
       scales: {
-        x: { display: false },
-        y: { ticks: { color: "white" }, beginAtZero: true },
+        y: { beginAtZero: true },
       },
     },
-  });
-
-  const attachment = new AttachmentBuilder(canvas.toBuffer("image/png"), {
-    name: "daily_ccu.png",
-  });
-
-  const embed = new EmbedBuilder()
-    .setThumbnail("https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true")
-    .setTitle("📊 Today's Repuls Activity!")
-    .setColor("#0B27F4")
-    .setDescription(
-      `### **Global Peak:** ${dailyHigh}\n` +
-      `### **Peak by Region:**\n` +
-      `• 🌏 Asia: ${asPeak}\n` +
-      `• 🇪🇺 Europe: ${euPeak}\n` +
-      `• 🇺🇸 North America: ${naPeak}\n\n` +
-      `### **Peak by Gamemode:**\n` +
-      `• ⚔ Casual: ${modePeaks.cs}\n` +
-      `• 💀 Hardcore: ${modePeaks.hc}\n` +
-      `• 🌐 Warfare: ${modePeaks.wf}\n` +
-      `• 🛠 Custom: ${modePeaks.cm}\n\n` +
-      `**Summary Time:** <t:${Math.floor(Date.now() / 1000)}:F>`
-    )
-    .setImage("attachment://daily_ccu.png");
-
-  const channel = await client.channels.fetch(DAILY_STATS_CHANNEL);
-  if (channel) {
-  await channel.send({ embeds: [embed], files: [attachment] });
-  resetAfterDailySend();
-}
-
-console.log("Daily summary sent and data reset!");
-}
-
-const API_URL = process.env.CCU;
-
-const UPDATE_INTERVAL = 10000;
-const HISTORY_LIMIT = 1440;
-
-const HISTORY_FILE = path.join(DATA_DIR, "ccu_history.json");
-
-let ccuHistory = [];
-let latestGlobalCCU = 0;
-
-if (fs.existsSync(HISTORY_FILE)) {
-  try {
-    const savedHistory = JSON.parse(fs.readFileSync(HISTORY_FILE, "utf8"));
-    ccuHistory = savedHistory.map(h => ({
-      ...h,
-      time: new Date(h.time),
-    }));
-  } catch (err) {
-    console.error("Failed to read CCU history file:", err.message);
-  }
-}
-
-function getRegionData(region, data) {
-  return {
-    cs: data?.perRegion?.[region]?.cs ?? 0,
-    hc: data?.perRegion?.[region]?.hc ?? 0,
-    wf: data?.perRegion?.[region]?.wf ?? 0,
-    cm: data?.perRegion?.[region]?.cm ?? 0,
   };
+
+  return await canvas.renderToBuffer(config);
 }
 
-function getUniversalTimestamp() {
-  const now = new Date();
-  const iso = now.toISOString();
-  const unix = Math.floor(now.getTime() / 1000);
-  return { iso, unix };
+
+async function sendReport(client) {
+  const channel = await client.channels.fetch(REPORT_CHANNEL_ID);
+  if (!channel) return;
+
+  const chartBuffer = await generateChart();
+  const attachment = new AttachmentBuilder(chartBuffer, {
+    name: "ccu.png",
+  });
+
+  const embed = {
+    color: 0x2f3136,
+    author: {
+      name: "REPULS.IO by DOCSKI",
+      icon_url: "https://cdn.discordapp.com/avatars/213028561584521216/a6962bf317cf74819879890cc706cdc3.png?size=1024",
+      url: "https://repuls.io",
+    },
+    thumbnail: {
+  url: "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true",
+},
+
+    title: "📊 Today's Repuls Activity!",
+    description:
+      `### 🌍 **Peak Global CCU:** ${peakGlobal}\n\n` +
+      `### 🗺️ **Peak by Region**\n` +
+      `AS01: ${peakRegion.as01}\n` +
+      `EU01: ${peakRegion.eu01}\n` +
+      `NA01: ${peakRegion.na01}\n` +
+      `NA02: ${peakRegion.na02}\n\n` +
+      `### 🎮 **Peak by Gamemode**\n` +
+      `Casual: ${peakGamemode.cs}\n` +
+      `Hardcore: ${peakGamemode.hc}\n` +
+      `Warfare: ${peakGamemode.wf}\n` +
+      `Custom: ${peakGamemode.cm}`,
+    image: {
+      url: "attachment://ccu.png",
+    },
+    timestamp: new Date().toISOString(),
+  };
+
+  await channel.send({
+    embeds: [embed],
+    files: [attachment],
+  });
 }
 
-function saveHistory() {
-  try {
-    fs.writeFileSync(
-      HISTORY_FILE,
-      JSON.stringify(ccuHistory, null, 2)
-    );
-  } catch (err) {
-    console.error("Failed to save CCU history:", err.message);
+
+function resetDailyData() {
+  ccuHistory = [];
+  peakGlobal = 0;
+  peakRegion = { as01: 0, eu01: 0, na01: 0, na02: 0 };
+  peakGamemode = { cm: 0, cs: 0, hc: 0, wf: 0 };
+
+  savePersistentData();
+}
+
+
+function startScheduler(client) {
+  setInterval(fetchCCU, POLL_INTERVAL);
+
+  if (TEST_MODE) {
+    setInterval(() => sendReport(client), 5 * 60 * 1000);
+    return;
   }
-}
 
-let saveCounter = 0;
-
-async function fetchCCU(client) {
-  try {
-    checkDailyReset();
-
-    const res = await axios.get(API_URL);
-    const data = res.data;
-
-    const as = getRegionData("as01", data);
-    const eu = getRegionData("eu01", data);
-    const na = getRegionData("na01", data);
-    const rawGlobal = data?.global ?? {};
-
-    const global = {
-      cs: rawGlobal.cs ?? rawGlobal.CS ?? rawGlobal.casual ?? 0,
-      hc: rawGlobal.hc ?? rawGlobal.HC ?? rawGlobal.hardcore ?? 0,
-      wf: rawGlobal.wf ?? rawGlobal.WF ?? rawGlobal.warfare ?? 0,
-      cm: rawGlobal.cm ?? rawGlobal.CM ?? rawGlobal.custom ?? 0,
-    };
-
-    const asTotal = as.cs + as.hc + as.wf + as.cm;
-    const euTotal = eu.cs + eu.hc + eu.wf + eu.cm;
-    const naTotal = na.cs + na.hc + na.wf + na.cm;
-    const globalTotal = global.cs + global.hc + global.wf + global.cm;
-    latestGlobalCCU = globalTotal;
-
-    if (globalTotal > records.highest) records.highest = globalTotal;
-    if (globalTotal < records.lowest) records.lowest = globalTotal;
-
-    saveRecords();
-
-    const { iso, unix } = getUniversalTimestamp();
-
-    updateDailyStats({
-      time: new Date(iso),
-      asTotal,
-      euTotal,
-      naTotal,
-      cs: global.cs,
-      hc: global.hc,
-      wf: global.wf,
-      cm: global.cm,
-      global: globalTotal
-    });
-
-    ccuHistory.push({
-      time: new Date(iso),
-      asTotal,
-      euTotal,
-      naTotal,
-      global: globalTotal,
-    });
-
-    if (ccuHistory.length > HISTORY_LIMIT) ccuHistory.shift();
-
-    saveCounter++;
-    if (saveCounter >= 30) {
-      saveHistory();
-      saveCounter = 0;
-    }
-
-    await updateGraphAndEmbed(client, as, eu, na, global, unix, globalTotal);
-  } catch (err) {
-    console.error("Error fetching CCU:", err.message);
-  }
-}
-
-async function updateGraphAndEmbed(client, as, eu, na, global, unix, total) {
-}
-
-export async function initCCUTracker(client) {
-  console.log("CCU Tracker initialized.");
-
-  await fetchCCU(client);
-
-  setInterval(() => fetchCCU(client), UPDATE_INTERVAL);
-
-  function msUntil6AMIST() {
+  setInterval(() => {
     const now = new Date();
-    const target = new Date();
+    const ist = new Date(
+      now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
 
-    target.setUTCHours(0, 30, 0, 0);
+    const todayKey = ist.toISOString().slice(0, 10);
 
-    if (now > target) {
-      target.setUTCDate(target.getUTCDate() + 1);
+    if (
+      ist.getHours() === 5 &&
+      ist.getMinutes() === 10 &&
+      lastReportDate !== todayKey
+    ) {
+      lastReportDate = todayKey;
+
+      sendReport(client).then(() => {
+        setTimeout(() => {
+          resetDailyData();
+          console.log("Daily CCU data reset after report");
+        }, 5000);
+      }).catch(err => {
+        console.error("Report failed, skipping reset:", err);
+      });
     }
-
-    return target - now;
-  }
-
-  setTimeout(() => {
-    sendDailySummary(client);
-    setInterval(() => sendDailySummary(client), 24 * 60 * 60 * 1000);
-
-  }, msUntil6AMIST());
+  }, 60 * 1000);
 }
 
 
-export function getLatestCCU() {
-  return latestGlobalCCU;
+export function initCCUTracker(client) {
+  loadPersistentData();
+  fetchCCU();
+  startScheduler(client);
 }

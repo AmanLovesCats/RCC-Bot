@@ -12,7 +12,7 @@ import {
 } from "discord.js";
 
 import { initCCUTracker } from "./events/CCU.js";
-import { getLatestCCU } from "./events/CCU.js";
+import { latestGlobalCCU } from "./events/CCU.js";
 import { initClanTracker } from "./events/clantracker.js";
 import { initSierraAI } from "./events/sierra.js";
 import { initGlobalMessages } from "./events/globalMessages.js";
@@ -83,7 +83,20 @@ async function registerCommands(clientId, token) {
 
 async function startBot() {
 
+  const token = process.env.TOKEN;
+  const clientId = process.env.CLIENT_ID;
+
+  await registerCommands(clientId, token);
+
+  await new Promise(resolve => {
   initCCUTracker(client);
+  const checkCCU = setInterval(() => {
+    if (latestGlobalCCU > 0) {
+      clearInterval(checkCCU);
+      resolve();
+    }
+  }, 1000);
+});
   initClanTracker(client);
   initSierraAI(client);
   initGlobalMessages(client, GM_ID, SESSION_TICKET);
@@ -101,11 +114,11 @@ async function startBot() {
     async function updateActivity() {
       let activity;
 
-      const ccu = getLatestCCU();
+      const ccu = latestGlobalCCU;
       const realtimeNames = ccu > 0
         ? [
-            `👾 ${ccu} players online in Repuls.io`,
-            `🌍 ${ccu} knights active worldwide`,
+            `${ccu} players online in Repuls.io`,
+            `${ccu} knights active worldwide`,
           ]
         : [];
 
@@ -130,25 +143,32 @@ async function startBot() {
     setInterval(updateActivity, 10000);
   });
 
-  client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+ client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
 
-    try {
-      await command.execute(interaction);
-    } catch (error) {
-      console.error(error);
-      const reply = {
-        content: "There was an error executing this command man",
-        ephemeral: true,
-      };
-      if (interaction.replied || interaction.deferred)
-        await interaction.followUp(reply);
-      else await interaction.reply(reply);
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(
+      `[Command Error] ${interaction.commandName}`,
+      error
+    );
+
+    // 🔴 DO NOT reply here if commands already reply themselves
+    if (!interaction.replied && !interaction.deferred) {
+      try {
+        await interaction.reply({
+          content: "❌ Something went wrong while executing this command.",
+          ephemeral: true,
+        });
+      } catch {}
     }
-  });
+  }
+});
+
 
   await client.login(process.env.TOKEN);
 }

@@ -1,288 +1,210 @@
+import { EmbedBuilder } from "discord.js";
 import axios from "axios";
 import fs from "fs";
 import path from "path";
-import { EmbedBuilder } from "discord.js";
-import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { buildTopClanImageFile } from "../utils/topClanImage.js";
+
 dotenv.config();
 
 const GAME_MODES = ["CTF", "TDM", "KOTH", "TKOTH", "FFA", "GunGame"];
 const TIMEFRAMES = ["daily"];
-const UPDATE_INTERVAL = 45 * 60 * 1000;
-const API_BASE = process.env.clantracker;
-const DELAY_BETWEEN_REQUESTS = 2500;
-const DAILY_REPORT_INTERVAL = 24 * 60 * 60 * 1000;
-const DAILY_REPORT_CHANNEL = "1126500874471079966";
+const CHANNEL = "1126164735948230709";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dataDir = path.resolve(__dirname, "../data");
-const dataPath = path.resolve(dataDir, "clanData.json");
+const TEST_MODE = false;
 
-let clanData = {};
+const DATA_PATH = path.join(process.cwd(), "src/data/clans.json");
 
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-if (!fs.existsSync(dataPath)) fs.writeFileSync(dataPath, JSON.stringify({}, null, 2));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function loadClanData() {
+function extractClanData(name) {
+  const match = name.match(/<color=(#[0-9A-Fa-f]{6})>\[(.*?)\]<\/color>/);
+  if (!match) return null;
+
+  return {
+    color: match[1],
+    clan: match[2]
+  };
+}
+
+function loadData() {
+  if (!fs.existsSync(DATA_PATH)) {
+    fs.writeFileSync(DATA_PATH, JSON.stringify({ updatedAt: 0, clans: [] }));
+  }
+  return JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
+}
+
+function saveData(data) {
+  fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2));
+}
+
+async function safeRequest(url, retries = 3) {
+  try {
+    return await axios.get(url);
+  } catch (err) {
+    if (retries > 0 && err.response?.status === 429) {
+      await sleep(3000);
+      return safeRequest(url, retries - 1);
+    }
+    throw err;
+  }
+}
+
+
+async function fetchAllPages(gameMode, timeframe) {
+  const API_BASE = process.env.topplayers;
+  const boardName = `lb_${gameMode}_${timeframe}`;
+
+  let page = 1;
+  let totalPages = 1;
+  let allPlayers = [];
+
+  while (page <= totalPages) {
+    const url = `${API_BASE}/api/getScore?boardName=${boardName}&page=${page}`;
+
     try {
-        clanData = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+      const { data } = await safeRequest(url);
+      totalPages = data.totalPages ?? 1;
+      allPlayers.push(...(data.data || []));
     } catch {
-        clanData = {};
+      console.warn(`[ClanTracker] Failed ${gameMode} page ${page}`);
     }
+
+    page++;
+    await sleep(1200);
+  }
+
+  return allPlayers;
 }
 
-function saveClanData() {
-    fs.writeFileSync(dataPath, JSON.stringify(clanData, null, 2));
-}
+async function computeClanLeaderboard() {
+  const clanMap = {};
 
-function extractClanData(username) {
-    if (!username) return null;
+  const MODE_DIVISORS = {
+    CTF: 2,
+    KOTH: 100,
+    TKOTH: 100,
+    TDM: 50,
+    FFA: 50,
+    GunGame: 15
+  };
 
-    const colorMatch = username.match(/<color=(#[0-9A-Fa-f]{6})>/);
-    const clanMatch = username.match(/<color=#[0-9A-Fa-f]{6}>(.*?)<\/color>/);
-    if (!clanMatch) return null;
+  for (const gm of GAME_MODES) {
+    for (const tf of TIMEFRAMES) {
+      const players = await fetchAllPages(gm, tf);
+      const divisor = MODE_DIVISORS[gm];
 
-    return {
-        clan: `[${clanMatch[1].trim()}]`,
-        color: colorMatch ? colorMatch[1] : "#0077ffff"
-    };
-}
+      if (!divisor) continue;
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (const p of players) {
+        const data = extractClanData(p.key);
+        if (!data) continue;
 
-async function fetchLeaderboardStreaming(boardName, processEntry) {
-    let page = 1;
+        const { clan, color } = data;
 
-    while (true) {
-        try {
-            const { data } = await axios.get(
-                `${API_BASE}?boardName=${boardName}&page=${page}`
-            );
+        const playerPoints = Number(p.value);
+        if (!Number.isFinite(playerPoints)) continue;
 
-            const pageData = data?.data;
-            if (!pageData?.length) break;
-
-            for (const entry of pageData) processEntry(entry);
-
-            page++;
-            await sleep(DELAY_BETWEEN_REQUESTS);
-
-        } catch (err) {
-            if (err.response?.status === 404) break;
-            if (err.response?.status === 429) {
-                await sleep(5000);
-                continue;
-            }
-            break;
+        if (!clanMap[clan]) {
+          clanMap[clan] = {
+            players: 0,
+            rawPoints: 0,
+            color
+          };
         }
+
+        clanMap[clan].players += 1;
+        clanMap[clan].rawPoints += playerPoints / divisor;
+      }
     }
+  }
+
+  return Object.entries(clanMap)
+    .map(([clan, data]) => ({
+      clan,
+      count: data.players,
+      points: Math.round(data.rawPoints),
+      color: data.color
+    }))
+    .sort((a, b) => b.points - a.points);
 }
 
-export async function fetchLeaderboard(boardName) {
-    let results = [];
-    let page = 1;
 
-    while (true) {
-        try {
-            const { data } = await axios.get(
-                `${API_BASE}?boardName=${boardName}&page=${page}`
-            );
 
-            const pageData = data?.data;
-            if (!Array.isArray(pageData) || pageData.length === 0) break;
-
-            results.push(...pageData);
-            page++;
-
-            await sleep(DELAY_BETWEEN_REQUESTS);
-
-        } catch (err) {
-            if (err.response?.status === 404) break;
-            if (err.response?.status === 429) {
-                await sleep(5000);
-                continue;
-            }
-            break;
-        }
-    }
-
-    return results;
-}
-
-async function updateClans() {
-    clanData = {};
-    saveClanData();
-
-    for (const mode of GAME_MODES) {
-        for (const timeframe of TIMEFRAMES) {
-
-            const board = `lb_${mode}_${timeframe}`;
-            console.log("Processing board:", board);
-
-            await fetchLeaderboardStreaming(board, entry => {
-                const username = entry.key;
-                const value = entry.value || 0;
-
-                const info = extractClanData(username);
-                if (!info) return;
-
-                const { clan, color } = info;
-
-                if (!clanData[clan]) {
-                    clanData[clan] = {
-                        totalValue: 0,
-                        color,
-                        players: new Set()
-                    };
-                }
-
-                clanData[clan].totalValue += value;
-                clanData[clan].players.add(username);
-            });
-
-            for (const c in clanData)
-                clanData[c].players = Array.from(clanData[c].players);
-
-            saveClanData();
-            await sleep(1000);
-        }
-    }
-}
-
-export async function getClanLeaderboardEmbed(client) {
-    const guildId = "1124932599626866718";
-    const guild = await client.guilds.fetch(guildId);
-
-    const sorted = Object.entries(clanData)
-        .map(([clan, data]) => ({
-            clan,
-            totalValue: data.totalValue || 0,
-            color: data.color || "#5865F2",
-            playerCount: Array.isArray(data.players) ? data.players.length : 0
-        }))
-        .sort((a, b) => b.totalValue - a.totalValue);
-
-    if (sorted.length === 0) return null;
-
-    const top = sorted[0];
-
-    return new EmbedBuilder()
-        .setAuthor({
-          name: "REPULS.IO By Docski",
-          iconURL: guild.iconURL({ dynamic: true, size: 128 }),
-          url: "https://repuls.io"
-        })
-        .setThumbnail("https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true")
-        .setTitle("Today's Top Clans!")
-        .setColor(top.color || "#5865F2")
-        .setDescription(
-            sorted
-                .slice(0, 10)
-                .map(
-                    (c, i) =>
-                        `**${i + 1}. ${c.clan}**Points: ***${c.totalValue.toLocaleString()}*** · Members on the leaderboard: **${c.playerCount}\n**`
-                )
-                .join("\n")
-        )
-        .setFooter({
-            text: "Admin View Enabled"
-        });
-}
-
-async function sendDailyClanReport(client) {
-    try {
-        const channel = await client.channels.fetch(DAILY_REPORT_CHANNEL);
-        if (!channel) return;
-
-        const sorted = Object.entries(clanData)
-            .map(([clan, data]) => ({
-                clan,
-                totalValue: data.totalValue || 0,
-                color: data.color || "#5865F2",
-                playerCount: Array.isArray(data.players) ? data.players.length : 0
-            }))
-            .sort((a, b) => b.totalValue - a.totalValue)
-            .slice(0, 10);
-
-        if (!sorted.length) return;
-
-        const rankEmojis = ["🥇", "🥈", "🥉"];
-
-        const leader = sorted[0];
-        const runnerUp = sorted[1];
-
-        const dominanceNote =
-          runnerUp && leader.totalValue >= runnerUp.totalValue * 1.25
-            ? `\n\n🔥 **${leader.clan} is dominating today!**`
-               : "";
-
-const embed = new EmbedBuilder()
+export function buildClanEmbed(clans) {
+  return new EmbedBuilder()
     .setAuthor({
-        name: "REPULS.IO By Docski",
-        iconURL: guild.iconURL({ dynamic: true, size: 128 }),
-        url: "https://repuls.io"
-    })
+      name: "REPULS.IO by DOCSKI",
+      icon_url: "https://cdn.discordapp.com/avatars/213028561584521216/a6962bf317cf74819879890cc706cdc3.png?size=1024",
+      url: "https://repuls.io",
+})
+    .setTitle(":trophy: Today's Top Clans")
     .setThumbnail(
-        "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true"
+      "https://cdn.discordapp.com/emojis/925776344380502126.webp?size=96&animated=true"
     )
-    .setTitle("🏆 Top Clans — Daily Rankings")
-    .setColor(sorted[0].color)
     .setDescription(
-        sorted
-            .map((c, i) => {
-                const medal = rankEmojis[i] ?? "🏅";
-                return (
-                    `**${medal} ${i + 1}. ${c.clan}** — **${c.totalValue.toLocaleString()} Points**\n` +
-                    `👥 Members on leaderboard: **${c.playerCount}**`
-                );
-            })
-            .join("\n\n") + dominanceNote
+      clans.slice(0, 5).map((c, i) => {
+        const medal = ["🥇", "🥈", "🥉", "🏅", "🏅"][i];
+        return `\n### **${medal} [${c.clan}]** — ${c.points} clan points • ${c.count} players`;
+      }).join("\n\n")
     )
-    .setFooter({
-        text: "Daily leaderboard • https://repuls.io/leaderboard/"
-    });
-
-        await channel.send({ embeds: [embed] });
-    } catch (err) {
-        console.error("Failed to send daily clan report:", err);
-    }
+    .setColor(0x9b59b6)
+    .setFooter({ text: "Daily reset • Repuls.io Clan Leaderboards" })
+    .setTimestamp();
 }
 
-export function startDailyClanReport(client) {
-    function msUntil525AM() {
-    const now = new Date();
-    const nowUTC = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
-    const targetIST = new Date(nowUTC);
-    targetIST.setUTCHours(5 - 5, 25 - 30, 0, 0);
-    
-    if (targetIST.getTime() <= nowUTC) {
-        targetIST.setUTCDate(targetIST.getUTCDate() + 1);
-    }
-
-    return targetIST.getTime() - nowUTC;
+function msUntil530IST() {
+  const now = new Date();
+  const target = new Date();
+  target.setUTCHours(0, 0, 0, 0);
+  if (now > target) target.setUTCDate(target.getUTCDate() + 1);
+  return target - now;
 }
 
-    setTimeout(() => {
-        sendDailyClanReport(client);
-
-        setInterval(() => sendDailyClanReport(client), DAILY_REPORT_INTERVAL);
-
-    }, msUntil525AM());
+export async function updateClanData() {
+  const clans = await computeClanLeaderboard();
+  saveData({ updatedAt: Date.now(), clans });
+  return clans;
 }
 
-export async function initClanTracker(client) {
-    loadClanData();
-    await updateClans();
-    setInterval(updateClans, UPDATE_INTERVAL);
-    startDailyClanReport(client);
-}
+export function initClanTracker(client) {
+  console.log("[ClanTracker] Initialized");
 
-export {
-    GAME_MODES,
-    TIMEFRAMES,
-    extractClanData,
-    saveClanData,
-    fetchLeaderboardStreaming,
-    updateClans
-};
+  async function sendPost() {
+    const { clans } = loadData();
+    if (!clans.length) return;
+
+    const channel = client.channels.cache.get(CHANNEL);
+    if (!channel) return;
+
+    const topClan = clans[0];
+if (!topClan) return;
+
+const imagePath = await buildTopClanImageFile(topClan);
+
+const embed = buildClanEmbed(clans)
+  .setImage("attachment://topclan.png");
+
+await channel.send({
+  embeds: [embed],
+  files: [{
+    attachment: imagePath,
+    name: "topclan.png"
+  }]
+});
+
+  }
+
+  setInterval(updateClanData, 45 * 60 * 1000);
+  updateClanData();
+
+  if (TEST_MODE) {
+    setInterval(sendPost, 5 * 60 * 1000);
+    return;
+  }
+
+  setTimeout(() => {
+    sendPost();
+    setInterval(sendPost, 24 * 60 * 60 * 1000);
+  }, msUntil530IST());
+}
