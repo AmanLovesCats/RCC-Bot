@@ -126,6 +126,14 @@ async function fetchCCU() {
   savePersistentData();
 }
 
+function getAverageGlobalCCU() {
+  if (ccuHistory.length === 0) return 0;
+
+  const sum = ccuHistory.reduce((acc, entry) => acc + entry.global, 0);
+  return Math.round(sum / ccuHistory.length);
+}
+
+
 
 async function generateChart() {
   const width = 900;
@@ -185,6 +193,7 @@ async function generateChart() {
 
 
 async function sendReport(client) {
+  const avgGlobal = getAverageGlobalCCU();
   const channel = await client.channels.fetch(REPORT_CHANNEL_ID);
   if (!channel) return;
 
@@ -207,6 +216,7 @@ async function sendReport(client) {
     title: "📊 Today's Repuls Activity!",
     description:
       `### 🌍 **Peak Global CCU:** ${peakGlobal}\n\n` +
+      `### 📈 **Average Global CCU:** ${avgGlobal}\n\n` +
       `### 🗺️ **Peak by Region**\n` +
       `AS01: ${peakRegion.as01}\n` +
       `EU01: ${peakRegion.eu01}\n` +

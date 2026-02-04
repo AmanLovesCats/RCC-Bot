@@ -17,6 +17,7 @@ import { initClanTracker } from "./events/clantracker.js";
 import { initSierraAI } from "./events/sierra.js";
 import { initGlobalMessages } from "./events/globalMessages.js";
 import { initDailyTopPlayers } from "./events/dailyTopPlayers.js";
+import { init as initUserMonitor } from './events/usermonitor.js';
 
 const GM_ID = "1447166337968373831";
 const SESSION_TICKET = process.env.REPULS_SESSION_TICKET;
@@ -101,6 +102,7 @@ async function startBot() {
   initSierraAI(client);
   initGlobalMessages(client, GM_ID, SESSION_TICKET);
   initDailyTopPlayers(client);
+  initUserMonitor(client);
 
   client.once(Events.ClientReady, async () => {
     console.log(`${client.user.tag} is ready to play repuls lol`);
