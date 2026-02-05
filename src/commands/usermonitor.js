@@ -6,7 +6,7 @@ const NOTIFY_CHANNEL_ID = "1126164735948230709";
 
 export const data = new SlashCommandBuilder()
   .setName("usermonitor")
-  .setDescription("User monitoring controls")
+  .setDescription("User monitoring controls(admin only)")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addStringOption(opt => 
     opt.setName("username").setDescription("Username").setRequired(true)

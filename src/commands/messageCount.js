@@ -7,7 +7,7 @@ const DATA_FILE = path.join(process.cwd(), "src/data/messageCounts.json");
 export default {
   data: new SlashCommandBuilder()
     .setName("messagecount")
-    .setDescription("Shows message statistics from Repuls global chat")
+    .setDescription("Shows message statistics from Repuls global chat(admin only)")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((option) =>
       option

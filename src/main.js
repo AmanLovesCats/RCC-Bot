@@ -145,31 +145,57 @@ async function startBot() {
     setInterval(updateActivity, 10000);
   });
 
- client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
+  client.on(Events.InteractionCreate, async interaction => {
+    
+    // --- 1. HANDLE COMPONENTS (Buttons, Select Menus, Modals) ---
+    // We check this first to intercept panel interactions before normal command logic
+    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+      
+      // Retrieve the esports command from the loaded collection
+      const esportsCommand = client.commands.get('esports');
 
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
-
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    console.error(
-      `[Command Error] ${interaction.commandName}`,
-      error
-    );
-
-    // 🔴 DO NOT reply here if commands already reply themselves
-    if (!interaction.replied && !interaction.deferred) {
-      try {
-        await interaction.reply({
-          content: "❌ Something went wrong while executing this command.",
-          ephemeral: true,
-        });
-      } catch {}
+      // If the command exists and has the exported handler function, run it
+      if (esportsCommand && typeof esportsCommand.handleInteractionCreate === 'function') {
+        try {
+          await esportsCommand.handleInteractionCreate(interaction);
+        } catch (error) {
+          console.error('[Esports Component Error]', error);
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+              content: 'There was an error processing this interaction.', 
+              ephemeral: true 
+            }).catch(() => {});
+          }
+        }
+      }
+      // Stop processing here if it was a component interaction
+      return; 
     }
-  }
-});
+
+    // --- 2. HANDLE CHAT INPUT COMMANDS (Existing Logic) ---
+    if (!interaction.isChatInputCommand()) return;
+
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
+
+    try {
+      await command.execute(interaction);
+    } catch (error) {
+      console.error(
+        `[Command Error] ${interaction.commandName}`,
+        error
+      );
+
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({
+            content: "Something went wrong while executing this command.",
+            ephemeral: true,
+          });
+        } catch {}
+      }
+    }
+  });
 
 
   await client.login(process.env.TOKEN);
