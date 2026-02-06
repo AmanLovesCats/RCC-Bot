@@ -20,6 +20,9 @@ export async function execute(interaction) {
   const sierraCmd = `</sierra:${commands.find(c => c.name === "sierra")?.id}>`;
   const findServersCmd = `</find-servers:${commands.find(c => c.name === "find-servers")?.id}>`;
   const leaderboardinfoCmd = `</leaderboard-info:${commands.find(c => c.name === "leaderboard-info")?.id}>`;
+  const esports = `</esports:${commands.find(c => c.name === "esports")?.id}>`;
+  const status = `</status:${commands.find(c => c.name === "status")?.id}>`;
+  const ping = `</ping:${commands.find(c => c.name === "ping")?.id}>`;
 
   const title = new TextDisplayBuilder().setContent(
     "### Heya! :RGBrepuls:"
@@ -34,6 +37,9 @@ export async function execute(interaction) {
       `• ${sierraCmd} or !sierra <question> — Ask the remade Sierra AI about REPULS lore.`,
       `• ${findServersCmd} — Find available or empty servers with a simple query.`,
       `• ${leaderboardinfoCmd} — Get detailed info on how the leaderboards work.`,
+      `• ${esports} — View the esports database and all of it's information.`,
+      `• ${status} — View the live website and server status of REPULS.IO`,
+       `• ${ping} — View the bots ping lol`,
       "",
       "**Useful Links Below:**"
     ].join("\n")

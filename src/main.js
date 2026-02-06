@@ -147,14 +147,10 @@ async function startBot() {
 
   client.on(Events.InteractionCreate, async interaction => {
     
-    // --- 1. HANDLE COMPONENTS (Buttons, Select Menus, Modals) ---
-    // We check this first to intercept panel interactions before normal command logic
     if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
-      
-      // Retrieve the esports command from the loaded collection
+
       const esportsCommand = client.commands.get('esports');
 
-      // If the command exists and has the exported handler function, run it
       if (esportsCommand && typeof esportsCommand.handleInteractionCreate === 'function') {
         try {
           await esportsCommand.handleInteractionCreate(interaction);
@@ -168,11 +164,9 @@ async function startBot() {
           }
         }
       }
-      // Stop processing here if it was a component interaction
       return; 
     }
 
-    // --- 2. HANDLE CHAT INPUT COMMANDS (Existing Logic) ---
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);
