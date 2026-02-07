@@ -207,7 +207,6 @@ export async function execute(interaction) {
     const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
     const userId = interaction.user.id;
 
-    // Admin Check with specific message
     if (isAdminRequest) {
         if (!isAdmin) {
             await interaction.reply({ content: 'you got guts to try', ephemeral: true });
@@ -437,7 +436,7 @@ async function showClanProfile(interaction, clanName, viewerId) {
     await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
-// Helper to verify ownership
+
 const verifyOwnership = (interaction, idString) => {
     if (!idString) return false;
     const parts = idString.split('_');
@@ -460,13 +459,11 @@ export async function handleInteractionCreate(interaction) {
             return;
         }
 
-        // Extract base ID without the user suffix for logic
         const baseCustomId = customId.substring(0, customId.lastIndexOf('_'));
 
         if (baseCustomId === 'portal_quick_select') {
             const parts = value.split('_');
             const viewerId = parts[parts.length - 1];
-            // Remove viewerId and timestamp/index to get name
             const tourneyName = parts.slice(3, -1).join('_'); 
             const tourney = db[tourneyName];
             
@@ -480,7 +477,7 @@ export async function handleInteractionCreate(interaction) {
         }
 
         if (baseCustomId === 'admin_menu') {
-            const choice = value.split('_')[0]; // 'upload', 'delete', etc.
+            const choice = value.split('_')[0];
             const viewerId = value.split('_').pop();
 
             if (choice === 'upload') {
@@ -610,7 +607,6 @@ export async function handleInteractionCreate(interaction) {
     }
 
     if (interaction.isModalSubmit()) {
-        // Basic ownership check for modals based on CustomID suffix
         if (!verifyOwnership(interaction, customId)) {
             await interaction.reply({ content: 'use your own man, try /esports', ephemeral: true });
             return;
@@ -733,7 +729,6 @@ export async function handleInteractionCreate(interaction) {
         }
 
         if (customId.startsWith('player_history_')) {
-            // Format: player_history_targetId_page_viewerId
             const targetUserId = parts[2];
             const page = parseInt(parts[3]);
             const stats = calculateUserStats(db, targetUserId);
@@ -742,9 +737,7 @@ export async function handleInteractionCreate(interaction) {
         }
 
         if (customId.startsWith('clan_history_')) {
-            // Format: clan_history_name_parts_0_viewerId
-            // Reconstruct clan name (everything between 'clan_history_' and '_page_viewerId')
-            // Structure: ['clan', 'history', ...clanNameParts..., page, viewerId]
+
             const page = parseInt(parts[parts.length - 2]);
             const clanName = parts.slice(2, parts.length - 2).join('_');
             const { stats } = await calculateClanStats(interaction.client, db, clanName);
@@ -753,16 +746,13 @@ export async function handleInteractionCreate(interaction) {
         }
 
         if (baseAction.startsWith('tourney_list_')) {
-            // Format: tourney_list_page_viewerId
+
             const page = parseInt(parts[2]);
             await showTournamentList(interaction, db, page, viewerId);
             return;
         }
 
         if (baseAction.startsWith('tourney_details_')) {
-            // Format: tourney_details_tourneyName_viewerId
-            // Note: tourneyName can have underscores.
-            // parts[0] = tourney, parts[1] = details. Rest is name + viewerId
             const tourneyName = parts.slice(2, parts.length - 1).join('_');
             const tourney = db[tourneyName];
             await showTournamentDetails(interaction, tourney, viewerId);
